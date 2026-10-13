@@ -944,11 +944,13 @@ export function Composer() {
 
     const placeholder = dictation.listening
         ? "Listening…"
-        : busy
-          ? steer
-              ? "Steer the current run…"
-              : "Queue a message for after this run…"
-          : "Ask Pi anything…";
+        : dictation.busy
+          ? "Transcribing…"
+          : busy
+            ? steer
+                ? "Steer the current run…"
+                : "Queue a message for after this run…"
+            : "Ask Pi anything…";
     const inbox = view.inbox ?? [];
     const { me, users } = store.state;
     const queuedBy = (item) =>

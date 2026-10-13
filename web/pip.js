@@ -504,7 +504,7 @@ function Composer({ id, busy }) {
             ref=${ref}
             rows="1"
             value=${text}
-            placeholder=${dictation.listening ? "Listening…" : busy ? "Tell PiP more…" : "Ask PiP…"}
+            placeholder=${dictation.listening ? "Listening…" : dictation.busy ? "Transcribing…" : busy ? "Tell PiP more…" : "Ask PiP…"}
             aria-label="Message to PiP"
             enterkeyhint="send"
             onInput=${(event) => change(event.currentTarget.value)}
