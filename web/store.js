@@ -273,6 +273,7 @@ export async function api(path, body, options = {}) {
     const init = {
         method: body === undefined && !options.method ? "GET" : (options.method ?? "POST"),
         headers: { "X-Pocket": "1" },
+        signal: options.signal,
     };
 
     if (body !== undefined) {

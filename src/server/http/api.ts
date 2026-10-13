@@ -29,6 +29,7 @@ import { conversationRoutes } from "./conversation-routes.ts";
 import { createEventStreams } from "./events.ts";
 import { type ApiRequest, conversationId, type HttpOptions, json, readJson } from "./io.ts";
 import { pushRoutes } from "./push-routes.ts";
+import { createTranscriber, transcriptionAvailable } from "./transcribe.ts";
 
 /** This machine's non-internal IPv4 addresses, for invite links other devices on its networks can open. */
 function lanAddresses(): string[] {
@@ -42,6 +43,7 @@ function lanAddresses(): string[] {
 export function createApi(options: HttpOptions, auth: Auth) {
     const { app } = options;
     const { events, poll } = createEventStreams(app);
+    const transcribe = createTranscriber();
 
     const requireUser = (request: IncomingMessage): User => {
         const user = auth.user(request);
@@ -138,6 +140,18 @@ export function createApi(options: HttpOptions, auth: Auth) {
 
         const [first, second, third, fourth] = parts;
         const route: ApiRequest = { app, request, response, url, user };
+
+        if (first === "transcribe" && second === undefined && method === "GET") {
+            return json(response, 200, {
+                available: user.role === "owner" && transcriptionAvailable(),
+            });
+        }
+
+        if (first === "transcribe" && second === undefined && method === "POST") {
+            requireOwner(user);
+
+            return json(response, 200, await transcribe(request));
+        }
 
         if (first === "events" && method === "GET") {
             return events(request, response, url, user);

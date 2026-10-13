@@ -12,7 +12,7 @@ const STUBS: Record<string, string> = {
         export const useRef = (current) => ({ current });
         export const useEffect = (effect) => globalThis.voiceCleanups.push(effect());
     `,
-    "./store.js": `export const notify = () => {};`,
+    "./store.js": `export const notify = () => {}; export const api = (...args) => globalThis.voiceApi?.(...args) ?? Promise.resolve({ available: false });`,
     "./ui.js": `export const html = () => null; export const Icon = () => null;`,
 };
 
@@ -282,4 +282,106 @@ test("Alt+V with no box in the page is not taken", () => {
     voice.useDictation({ current: null }, () => {});
     assert.equal(voice.toggleDictation(), false);
     unmountAll();
+});
+
+test("recording keeps edits, uses raw audio, and cancels late permission and transcription", async () => {
+    const globals = globalThis as unknown as Record<string, any>;
+
+    let releasePermission: (stream: unknown) => void = () => {};
+
+    let stopped = 0;
+    let uploaded: Blob | undefined;
+    let requestSignal: AbortSignal | undefined;
+
+    let resolveText: (text: unknown) => void = () => {};
+
+    const stream = { getTracks: () => [{ stop: () => stopped++ }] };
+    const recorders: any[] = [];
+
+    globals.MediaRecorder = class {
+        static isTypeSupported(type: string) {
+            return type === "audio/webm;codecs=opus";
+        }
+        state = "inactive";
+        mimeType = "audio/webm;codecs=opus";
+        ondataavailable: any;
+        onstop: any;
+        constructor() {
+            recorders.push(this);
+        }
+        start() {
+            this.state = "recording";
+        }
+        stop() {
+            this.state = "inactive";
+            this.ondataavailable({ data: new Blob(["audio"]) });
+            void this.onstop();
+        }
+    };
+    Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: {
+            getUserMedia: () =>
+                new Promise((resolve) => {
+                    releasePermission = resolve;
+                }),
+        },
+    });
+
+    globals.voiceApi = (_path: string, body?: Blob, options?: { signal: AbortSignal }) => {
+        if (!body) {
+            return Promise.resolve({ available: true });
+        }
+
+        uploaded = body;
+        requestSignal = options?.signal;
+
+        return new Promise((resolve) => {
+            resolveText = resolve;
+        });
+    };
+
+    const tick = async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    const box = new Box("draft");
+
+    page.activeElement = box;
+    const dictation = voice.useDictation({ current: box }, () => {});
+
+    await tick();
+    dictation.toggle();
+    dictation.stop(true);
+    releasePermission(stream);
+    await tick();
+    assert.equal(stopped, 1);
+    assert.equal(recorders.length, 0);
+
+    dictation.toggle();
+    releasePermission(stream);
+    await tick();
+    box.type(" typed");
+    box.caret(0);
+    dictation.toggle();
+    await tick();
+    assert.equal(uploaded?.type, "audio/webm;codecs=opus");
+    resolveText({ text: "src/main.ts" });
+    await tick();
+    assert.equal(box.value, "src/main.ts draft typed");
+
+    dictation.toggle();
+    releasePermission(stream);
+    await tick();
+    dictation.toggle();
+    await tick();
+    dictation.stop(true);
+    assert.equal(requestSignal?.aborted, true);
+    resolveText({ text: "discarded" });
+    await tick();
+    assert.equal(box.value, "src/main.ts draft typed");
+    unmountAll();
+    delete globals.voiceApi;
+    delete globals.MediaRecorder;
+    delete globals.navigator.mediaDevices;
 });
